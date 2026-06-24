@@ -1,9 +1,8 @@
 -- ============================================================
--- APPLY_ALL — الصق هذا كامل في Supabase → SQL Editor → Run
--- (يطبّق المخطط + الأمان + البذور + المصادقة + دوال اللوحة)
+-- APPLY_ALL — الصق كاملاً في Supabase SQL Editor (بالترتيب)
 -- ============================================================
 
--- >>> db/01_schema.sql
+-- ======================== db/01_schema.sql ========================
 -- ============================================================================
 -- مؤشر أداء موظفات المبيعات — مخطط قاعدة البيانات (Schema)
 -- ============================================================================
@@ -214,7 +213,7 @@ left join public.performance_logs pl
 where e.is_active and e.show_in_display
 group by e.id, e.full_name, tl.full_name;
 
--- >>> db/02_security_rls.sql
+-- ======================== db/02_security_rls.sql ========================
 -- ============================================================================
 -- الأمان: RLS + الصلاحيات (نموذج أصفر-ثقة من البداية)
 -- ============================================================================
@@ -245,7 +244,7 @@ grant select on public.live_display to anon;
 -- execute لـ anon داخل ملفات الدوال نفسها (db/04_rpc_*.sql)، وكلها
 -- SECURITY DEFINER + verify_session داخلها.
 
--- >>> db/03_seed.sql
+-- ======================== db/03_seed.sql ========================
 -- ============================================================================
 -- البذور: الصلاحيات + مدير افتراضي + الإعدادات الافتراضية
 -- ============================================================================
@@ -295,7 +294,7 @@ insert into public.settings(key, value) values
 ))
 on conflict (key) do nothing;
 
--- >>> db/04_auth.sql
+-- ======================== db/04_auth.sql ========================
 -- ============================================================================
 -- المصادقة: verify_session (تُستخدم داخل كل RPC) + verify_login + logout
 -- ============================================================================
@@ -363,7 +362,7 @@ grant execute on function public.login(text,text) to anon;
 grant execute on function public.logout(text) to anon;
 -- verify_session تُستدعى داخلياً من الدوال الأخرى (لا تُمنح لـ anon مباشرة)
 
--- >>> db/05_rpc_core.sql
+-- ======================== db/05_rpc_core.sql ========================
 -- ============================================================================
 -- دوال لوحة التحكم (RPCs) — قراءة + CRUD، كلها SECURITY DEFINER + verify_session
 -- ============================================================================
@@ -560,7 +559,7 @@ do $$ declare f text; begin
   end loop;
 end $$;
 
--- >>> db/06_users_live.sql
+-- ======================== db/06_users_live.sql ========================
 -- ============================================================================
 -- إدارة المستخدمين + تغيير كلمة المرور + إعدادات عامة لشاشة العرض
 -- ============================================================================
@@ -665,7 +664,8 @@ do $$ declare f text; begin
     execute format('grant execute on function public.%s to anon', f);
   end loop;
 end $$;
--- >>> db/07_qoyod_settings.sql
+
+-- ======================== db/07_qoyod_settings.sql ========================
 -- ============================================================================
 -- إعدادات قيود: قراءة (مُقنّعة) + حفظ (الأسرار في Vault) — admin فقط
 -- ============================================================================
@@ -746,7 +746,8 @@ revoke all on function public.get_qoyod_settings(text) from public;
 revoke all on function public.save_qoyod_settings(text,text,text,text,text,int,text,text,text) from public;
 grant execute on function public.get_qoyod_settings(text) to anon;
 grant execute on function public.save_qoyod_settings(text,text,text,text,text,int,text,text,text) to anon;
--- >>> db/08_qoyod_sync.sql
+
+-- ======================== db/08_qoyod_sync.sql ========================
 -- ============================================================================
 -- محرّك مزامنة قيود (داخل القاعدة عبر امتداد http) + تطبيع/مطابقة + احتساب الأداء
 -- ============================================================================
@@ -769,16 +770,17 @@ returns text language sql immutable as $$
   select trim(regexp_replace((select s from c),'\s+',' ','g'));
 $$;
 
--- مطابقة موظفة من نصّ notes: تطابق إن ظهر الاسمان (الأول والأخير من qoyod_ref) كلمتين في النصّ
+-- مطابقة تلقائية بالاسم المسجّل للموظفة (qoyod_ref إن وُجد، وإلا full_name):
+-- تطابق إن ظهر الاسمان الأول والأخير ككلمتين داخل نصّ notes.
 create or replace function public.match_employee_from_notes(p_notes text)
 returns bigint language plpgsql stable as $$
 declare v_n text; e record; v_first text; v_last text; v_toks text[];
 begin
   v_n := ' ' || public.normalize_ar(p_notes) || ' ';
-  if length(trim(v_n)) = 0 then return null; end if;
-  for e in select id, qoyod_ref from public.employees where is_active and coalesce(trim(qoyod_ref),'')<>'' loop
-    v_toks := string_to_array(public.normalize_ar(e.qoyod_ref),' ');
-    v_toks := array(select t from unnest(v_toks) t where length(t)>=2);
+  if length(trim(v_n)) <= 1 then return null; end if;
+  for e in select id, coalesce(nullif(trim(qoyod_ref),''), full_name) as nm
+           from public.employees where is_active and coalesce(nullif(trim(qoyod_ref),''), full_name) is not null loop
+    v_toks := array(select t from unnest(string_to_array(public.normalize_ar(e.nm),' ')) t where length(t)>=2);
     if array_length(v_toks,1) is null then continue; end if;
     v_first := v_toks[1]; v_last := v_toks[array_upper(v_toks,1)];
     if v_n like '% '||v_first||' %' and v_n like '% '||v_last||' %' then
@@ -942,7 +944,8 @@ revoke all on function public.test_qoyod(text) from public;
 revoke all on function public.sync_qoyod(text,date) from public;
 grant execute on function public.test_qoyod(text) to anon;
 grant execute on function public.sync_qoyod(text,date) to anon;
--- >>> db/09_review.sql
+
+-- ======================== db/09_review.sql ========================
 -- ============================================================================
 -- "يحتاج مراجعة": عرض المبيعات غير المطابقة + إسنادها يدوياً لموظفة
 -- ============================================================================
