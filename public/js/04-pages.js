@@ -12,6 +12,7 @@ const MENU = [
   { key: 'targets',      label: 'الأهداف',        icon: '🎯', roles: ['admin'] },
   { key: 'reports',      label: 'التقارير',       icon: '📑', roles: ['admin', 'manager', 'team_leader'] },
   { key: 'qoyod',        label: 'إعدادات قيود',   icon: '🔌', roles: ['admin'] },
+  { key: 'review',       label: 'يحتاج مراجعة',   icon: '⚠️', roles: ['admin', 'manager'] },
   { key: 'settings',     label: 'الإعدادات',      icon: '⚙️', roles: ['admin'] },
 ];
 
@@ -65,6 +66,7 @@ function renderPage() {
     case 'users': return renderUsers();
     case 'settings': return renderSettings();
     case 'qoyod': return renderQoyod();
+    case 'review': return renderReview();
     case 'reports': return '<div class="card"><div class="card-body">📑 التقارير — تُبنى في المرحلة 5.</div></div>';
     default: return '<div class="card"><div class="card-body">الصفحة غير موجودة</div></div>';
   }
@@ -298,8 +300,26 @@ function bindPage() {
   document.querySelectorAll('[data-usr-edit]').forEach(b => b.addEventListener('click', () => userModal((App._users || []).find(u => u.id == b.dataset.usrEdit))));
   document.querySelectorAll('[data-usr-del]').forEach(b => b.addEventListener('click', () => deleteUser(b.dataset.usrDel)));
   if (add('q-save')) add('q-save').addEventListener('click', saveQoyod);
-  if (add('q-test')) add('q-test').addEventListener('click', () => Toast.info('اختبار الاتصال يُفعّل بعد إكمال ربط قيود (المرحلة 3) — احفظ البيانات الآن'));
-  if (add('q-sync')) add('q-sync').addEventListener('click', () => Toast.info('المزامنة تُفعّل بعد إكمال ربط قيود (المرحلة 3)'));
+  if (add('q-test')) add('q-test').addEventListener('click', testQoyod);
+  if (add('q-sync')) add('q-sync').addEventListener('click', syncQoyod);
+  document.querySelectorAll('[data-assign]').forEach(sel => sel.addEventListener('change', () => assignSale(sel.dataset.assign, sel.value)));
+}
+async function testQoyod() {
+  const b = document.getElementById('q-test'); b.disabled = true; b.textContent = '⏳ جارٍ الاختبار...';
+  try { const d = await rpc('test_qoyod', { p_session_token: App.token }); if (!d.ok) { if (!handleSessionError(d.message)) Toast.error(d.message); } else Toast.success(d.message); App._qoyod = null; }
+  catch (e) { Toast.error(e.message); } finally { render(); }
+}
+async function syncQoyod() {
+  const b = document.getElementById('q-sync'); if (b) { b.disabled = true; b.textContent = '⏳ جارٍ المزامنة...'; }
+  try { const d = await rpc('sync_qoyod', { p_session_token: App.token, p_since: null }); if (!d.ok) { if (!handleSessionError(d.message)) Toast.error(d.message); } else Toast.success(d.message + (d.unmatched ? ` — ${d.unmatched} يحتاج مراجعة` : '')); App._qoyod = null; }
+  catch (e) { Toast.error(e.message); } finally { render(); }
+}
+async function assignSale(saleId, empId) {
+  if (!empId) return;
+  try { const d = await rpc('assign_sale', { p_session_token: App.token, p_sale_id: parseInt(saleId), p_employee_id: parseInt(empId) });
+    if (!d.ok) { if (!handleSessionError(d.message)) Toast.error(d.message); return; }
+    Toast.success('تم الإسناد'); App._review = null; render();
+  } catch (e) { Toast.error(e.message); }
 }
 function confirmDelete(kind, id) {
   if (!confirm('هل أنت متأكد من الحذف؟')) return;
@@ -459,6 +479,33 @@ async function saveQoyod() {
     if (!d.ok) { if (!handleSessionError(d.message)) Toast.error(d.message); return; }
     Toast.success('تم حفظ إعدادات قيود'); App._qoyod = null; render();
   } catch (e) { Toast.error(e.message); }
+}
+
+// ===== يحتاج مراجعة (مبيعات غير مطابقة) =====
+function renderReview() {
+  if (!App._review) {
+    rpc('get_unmatched', { p_session_token: App.token }).then(d => {
+      if (!d.ok) { if (!handleSessionError(d.message)) Toast.error(d.message); return; }
+      App._review = d; if (App.page === 'review') render();
+    }).catch(e => Toast.error(e.message));
+    return '<div class="card"><div class="card-body">⏳ جارٍ التحميل…</div></div>';
+  }
+  const items = App._review.items || [];
+  const empOpts = App.data.employees.filter(e => e.is_active).map(e => `<option value="${e.id}">${Utils.escape(e.full_name)}</option>`).join('');
+  const stripHtml = s => String(s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').trim();
+  const canAssign = Perms.isAdmin();
+  const rows = items.map(it => `<tr>
+      <td>${Utils.formatDate(it.sale_date)}</td>
+      <td>${Utils.escape(it.reference || '-')}</td>
+      <td style="font-size:12px;color:var(--muted);max-width:280px">${Utils.escape(stripHtml(it.notes) || '—')}</td>
+      <td>${canAssign ? `<select class="form-control" data-assign="${it.id}" style="padding:5px"><option value="">— أسنِد لموظفة —</option>${empOpts}</select>` : '—'}</td>
+    </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--success)">✅ لا توجد مبيعات تحتاج مراجعة</td></tr>';
+  return `<h2 style="font-size:18px;margin-bottom:6px">⚠️ يحتاج مراجعة (${App._review.count})</h2>
+  <div class="alert alert-info">مبيعات لم يُطابَق اسم الموظفة فيها (أو بلا اسم). أسنِدها يدوياً حتى لا يضيع أي مبلغ. <strong>المبالغ مخفية حفاظاً على السرّية — تُعرض النِّسب فقط في اللوحة.</strong></div>
+  <div class="card"><table class="table">
+    <thead><tr><th>التاريخ</th><th>رقم العرض</th><th>المعلومات الإضافية (notes)</th><th>الإسناد</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>
+  ${items.length >= 200 ? '<div class="alert alert-info">يُعرض أول 200 — أسنِد البعض لتظهر البقية.</div>' : ''}`;
 }
 
 // ===== تغيير كلمة المرور =====
