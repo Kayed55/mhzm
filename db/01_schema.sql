@@ -137,25 +137,6 @@ create table if not exists public.settings (
   updated_by  bigint references public.users(id) on delete set null
 );
 
-create table if not exists public.qoyod_settings (
-  id                 int primary key default 1 check (id = 1),  -- صفّ واحد
-  company_id         varchar(150),
-  branch_id          varchar(150),
-  base_url           varchar(300) default 'https://www.qoyod.com/api',
-  webhook_url        varchar(300),
-  sync_interval_min  int not null default 30,
-  -- مراجع أسرار Vault (لا نصّ واضح): UUIDs من vault.secrets
-  client_id_secret_id     uuid,
-  client_secret_secret_id uuid,
-  api_key_secret_id       uuid,
-  connection_status  varchar(20) not null default 'unknown'
-                       check (connection_status in ('connected','disconnected','error','unknown')),
-  last_sync_at       timestamptz,
-  last_error         text,
-  updated_at         timestamptz not null default now(),
-  updated_by         bigint references public.users(id) on delete set null
-);
-insert into public.qoyod_settings(id) values (1) on conflict (id) do nothing;
 
 -- سجل المزامنة والأخطاء
 create table if not exists public.sync_logs (
