@@ -64,7 +64,7 @@ function renderPage() {
     case 'targets': return renderTargets();
     case 'users': return renderUsers();
     case 'settings': return renderSettings();
-    case 'qoyod': return '<div class="card"><div class="card-body">🔌 إعدادات قيود — تُبنى في المرحلة 3 (الربط الفعلي).</div></div>';
+    case 'qoyod': return renderQoyod();
     case 'reports': return '<div class="card"><div class="card-body">📑 التقارير — تُبنى في المرحلة 5.</div></div>';
     default: return '<div class="card"><div class="card-body">الصفحة غير موجودة</div></div>';
   }
@@ -297,6 +297,9 @@ function bindPage() {
   if (add('usr-add')) add('usr-add').addEventListener('click', () => userModal(null));
   document.querySelectorAll('[data-usr-edit]').forEach(b => b.addEventListener('click', () => userModal((App._users || []).find(u => u.id == b.dataset.usrEdit))));
   document.querySelectorAll('[data-usr-del]').forEach(b => b.addEventListener('click', () => deleteUser(b.dataset.usrDel)));
+  if (add('q-save')) add('q-save').addEventListener('click', saveQoyod);
+  if (add('q-test')) add('q-test').addEventListener('click', () => Toast.info('اختبار الاتصال يُفعّل بعد إكمال ربط قيود (المرحلة 3) — احفظ البيانات الآن'));
+  if (add('q-sync')) add('q-sync').addEventListener('click', () => Toast.info('المزامنة تُفعّل بعد إكمال ربط قيود (المرحلة 3)'));
 }
 function confirmDelete(kind, id) {
   if (!confirm('هل أنت متأكد من الحذف؟')) return;
@@ -381,6 +384,81 @@ function deleteUser(id) {
     if (!d.ok) { if (!handleSessionError(d.message)) Toast.error(d.message); return; }
     Toast.success('تم الحذف'); App._users = null; render();
   }).catch(e => Toast.error(e.message));
+}
+
+// ===== إعدادات قيود (Qoyod) =====
+function renderQoyod() {
+  if (!App._qoyod) {
+    rpc('get_qoyod_settings', { p_session_token: App.token }).then(d => {
+      if (!d.ok) { if (!handleSessionError(d.message)) Toast.error(d.message); return; }
+      App._qoyod = d; if (App.page === 'qoyod') render();
+    }).catch(e => Toast.error(e.message));
+    return '<div class="card"><div class="card-body">⏳ جارٍ التحميل…</div></div>';
+  }
+  const s = App._qoyod.settings || {};
+  const logs = App._qoyod.logs || [];
+  const statusBadge = {
+    connected: '<span class="badge" style="background:var(--success)">متصل</span>',
+    disconnected: '<span class="badge" style="background:var(--muted)">غير متصل</span>',
+    error: '<span class="badge" style="background:var(--danger)">يوجد خطأ</span>',
+    unknown: '<span class="badge" style="background:var(--warning)">غير معروف</span>',
+  }[s.connection_status || 'unknown'];
+  const secretField = (id, label, has) => `<div class="form-group"><label class="form-label">${label}${has ? ' <span style="color:var(--success);font-size:11px">(محفوظ ✓)</span>' : ''}</label>
+    <input type="password" class="form-control" id="${id}" placeholder="${has ? 'محفوظ — اتركه فارغاً للإبقاء عليه' : ''}" autocomplete="new-password"></div>`;
+  const logRows = logs.map(l => `<tr>
+      <td>${Utils.formatDate(l.started_at)}</td>
+      <td>${l.status === 'success' ? '✅' : l.status === 'error' ? '❌' : l.status === 'running' ? '⏳' : '⚠️'} ${Utils.escape(l.status)}</td>
+      <td>${l.records_synced}</td>
+      <td style="font-size:12px;color:var(--muted)">${Utils.escape(l.message || '-')}</td>
+      <td>${l.triggered_by === 'manual' ? 'يدوي' : 'تلقائي'}</td>
+    </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--muted)">لا توجد عمليات مزامنة بعد</td></tr>';
+
+  return `<h2 style="font-size:18px;margin-bottom:14px">🔌 إعدادات قيود (Qoyod)</h2>
+  <div class="alert alert-info">أدخل بيانات الربط يدوياً. <strong>الأسرار (Client Secret / API Key) تُخزَّن مشفّرة في Vault ولا تُعرض بعد الحفظ.</strong></div>
+
+  <div class="card"><div class="card-header"><div class="card-title">حالة الاتصال</div><div>${statusBadge}</div></div>
+    <div class="card-body" style="display:flex;gap:24px;flex-wrap:wrap;font-size:14px">
+      <div>آخر مزامنة: <strong>${s.last_sync_at ? Utils.formatDate(s.last_sync_at) : '—'}</strong></div>
+      ${s.last_error ? `<div style="color:var(--danger)">آخر خطأ: ${Utils.escape(s.last_error)}</div>` : ''}
+    </div></div>
+
+  <div class="card"><div class="card-header"><div class="card-title">بيانات الربط</div></div><div class="card-body">
+    <div class="grid grid-2">
+      ${secretField('q-clientid', 'Client ID', s.has_client_id)}
+      ${secretField('q-secret', 'Client Secret', s.has_client_secret)}
+      ${secretField('q-apikey', 'API Key', s.has_api_key)}
+      <div class="form-group"><label class="form-label">Company ID</label><input class="form-control" id="q-company" value="${Utils.escape(s.company_id || '')}"></div>
+      <div class="form-group"><label class="form-label">Branch ID (اختياري)</label><input class="form-control" id="q-branch" value="${Utils.escape(s.branch_id || '')}"></div>
+      <div class="form-group"><label class="form-label">Base URL</label><input class="form-control" id="q-baseurl" value="${Utils.escape(s.base_url || 'https://www.qoyod.com/api')}"></div>
+      <div class="form-group"><label class="form-label">Webhook URL (اختياري)</label><input class="form-control" id="q-webhook" value="${Utils.escape(s.webhook_url || '')}"></div>
+      <div class="form-group"><label class="form-label">فترة المزامنة التلقائية (دقيقة)</label><input type="number" min="5" class="form-control" id="q-interval" value="${s.sync_interval_min || 30}"></div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+      <button class="btn btn-primary" id="q-save">💾 حفظ الإعدادات</button>
+      <button class="btn btn-secondary" id="q-test">🔍 اختبار الاتصال</button>
+      <button class="btn btn-success" id="q-sync">🔄 مزامنة الآن</button>
+    </div>
+  </div></div>
+
+  <div class="card"><div class="card-header"><div class="card-title">📜 سجل المزامنة</div></div>
+    <table class="table"><thead><tr><th>البدء</th><th>الحالة</th><th>سجلات</th><th>الرسالة</th><th>النوع</th></tr></thead><tbody>${logRows}</tbody></table></div>`;
+}
+async function saveQoyod() {
+  try {
+    const d = await rpc('save_qoyod_settings', {
+      p_session_token: App.token,
+      p_company_id: document.getElementById('q-company').value.trim(),
+      p_branch_id: document.getElementById('q-branch').value.trim(),
+      p_base_url: document.getElementById('q-baseurl').value.trim(),
+      p_webhook_url: document.getElementById('q-webhook').value.trim(),
+      p_sync_interval_min: parseInt(document.getElementById('q-interval').value) || 30,
+      p_client_id: document.getElementById('q-clientid').value || null,
+      p_client_secret: document.getElementById('q-secret').value || null,
+      p_api_key: document.getElementById('q-apikey').value || null,
+    });
+    if (!d.ok) { if (!handleSessionError(d.message)) Toast.error(d.message); return; }
+    Toast.success('تم حفظ إعدادات قيود'); App._qoyod = null; render();
+  } catch (e) { Toast.error(e.message); }
 }
 
 // ===== تغيير كلمة المرور =====
