@@ -1,0 +1,22 @@
+# أسرار وبيئة
+.env
+.env.*
+*.key
+*.pem
+secrets.json
+
+# نظام التشغيل / المحرر
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Node / أدوات
+node_modules/
+npm-debug.log*
+.vercel/
+supabase/.temp/
+
+# نسخ احتياطية محلية (قد تحوي بيانات حساسة)
+*backup*.json
+/tmp/
