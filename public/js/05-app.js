@@ -10,8 +10,8 @@ async function boot() {
       '<div class="center-screen"><div class="center-card"><h2 style="color:#ef4444">غير متصل</h2><p>لم تُضبط إعدادات Supabase في 01-constants.js</p></div></div>';
     return;
   }
-  // شاشة العرض المباشر: عامة بلا تسجيل دخول
-  if (location.pathname.replace(/\/+$/, '') === '/live') { startLiveDisplay(); return; }
+  // شاشة العرض المباشر: عامة بلا تسجيل دخول (عبر live.html أو مسار /live)
+  if (window.LIVE_MODE || /(^|\/)live(\.html)?\/?$/.test(location.pathname)) { startLiveDisplay(); return; }
   App.token = getToken();
   if (!App.token) { navigate('login'); return; }
   // محاولة استعادة الجلسة
