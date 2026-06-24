@@ -271,7 +271,7 @@ function renderSettings() {
     <div class="form-group"><label class="form-label">مدة تحديث شاشة العرض (ثانية)</label><input type="number" min="5" class="form-control" id="st-refresh" value="${s.refresh_seconds || 20}"></div>
     <button class="btn btn-primary" id="st-save">حفظ الإعدادات</button>
   </div></div>
-  <div class="alert alert-info">حدود الحالات والألوان وإعدادات قيود تُدار في صفحاتها/مرحلتها.</div>`;
+  <div class="alert alert-info">حدود الحالات والألوان تُدار ضمن الإعدادات لاحقاً.</div>`;
 }
 
 // ===== ربط الأحداث =====
