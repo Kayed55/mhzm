@@ -79,14 +79,14 @@ const Modal = {
   close() { const m = document.getElementById('modal-ov'); if (m) m.remove(); },
 };
 
-// تحميل بيانات اللوحة من الخادم (مفلترة حسب الدور)
+// تحميل بيانات لوحة الجودة من الخادم
 async function loadAppData() {
-  const d = await rpc('get_app_data', { p_session_token: App.token });
+  const d = await rpc('get_quality_data', { p_session_token: App.token });
   if (!d || !d.ok) { throw new Error((d && d.message) || 'تعذّر تحميل البيانات'); }
   App.me = d.me;
   App.data = {
-    employees: d.employees || [], team_leaders: d.team_leaders || [],
-    targets: d.targets || [], performance: d.performance || [], settings: d.settings || {},
+    employees: d.employees || [], keywords: d.keywords || [],
+    stats: d.stats || {}, settings: d.settings || {},
   };
   if (App.data.settings && App.data.settings.system_name) SYSTEM_NAME = App.data.settings.system_name;
   return App.data;

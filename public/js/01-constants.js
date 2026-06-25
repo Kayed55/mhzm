@@ -13,7 +13,7 @@ const SUPABASE_CONFIG = {
 };
 
 // اسم النظام الافتراضي (يُحدَّث من الإعدادات لاحقاً)
-let SYSTEM_NAME = 'مؤشر أداء موظفات المبيعات';
+let SYSTEM_NAME = 'نظام مساند الجودة';
 
 // حالات الأداء الافتراضية (تُحمَّل من settings.status_thresholds وتُعدَّل من اللوحة)
 const DEFAULT_STATUS_THRESHOLDS = [
