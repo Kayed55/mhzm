@@ -260,6 +260,11 @@ function renderMeta() {
   <div class="alert alert-info">الأسرار (Access Token / App Secret) تُخزَّن مشفّرة في Vault ولا تُعرض. <strong>Webhook يستقبل الرسائل لحظياً.</strong></div>
   <div class="card"><div class="card-header"><div class="card-title">حالة الربط</div><div>${statusBadge}</div></div>
     <div class="card-body" style="font-size:14px">آخر حدث: <strong>${s.last_event_at ? new Date(s.last_event_at).toLocaleString('ar-SA') : '—'}</strong>${s.last_error ? ` · <span style="color:var(--danger)">${Utils.escape(s.last_error)}</span>` : ''}</div></div>
+  <div class="card"><div class="card-header"><div class="card-title">ربط واتساب الأعمال (Embedded Signup)</div></div><div class="card-body">
+    <button class="btn btn-success" id="mt-connect" ${(!s.app_id || !s.config_id) ? 'disabled' : ''}>🟢 ربط واتساب الأعمال عبر Meta</button>
+    ${(!s.app_id || !s.config_id) ? '<div style="color:var(--danger);font-size:12px;margin-top:8px">أدخل App ID و Configuration ID واحفظ أولاً.</div>'
+      : '<div style="color:var(--muted);font-size:12px;margin-top:8px">يفتح تدفّق Meta لاختيار رقم واتساب؛ يُجلب التوكن تلقائياً.</div>'}
+  </div></div>
   <div class="card"><div class="card-header"><div class="card-title">بيانات الربط</div></div><div class="card-body">
     <div class="grid grid-2">
       <div class="form-group"><label class="form-label">App ID</label><input class="form-control" id="mt-app" value="${Utils.escape(s.app_id || '')}"></div>
@@ -273,8 +278,44 @@ function renderMeta() {
     </div>
     <button class="btn btn-primary" id="mt-save">💾 حفظ إعدادات الربط</button>
   </div></div>
-  <div class="alert alert-info">سأكمل تدفّق Embedded Signup ومُستقبِل الـ Webhook بعد تزويدك بكود Meta وحسم تعريف الموظف.</div>`;
+  <div class="alert alert-info">بعد الحفظ: اضبط Webhook في لوحة Meta (Callback URL = Webhook URL أعلاه، Verify Token مطابق)، ثم اضغط "ربط واتساب".</div>`;
 }
+// Embedded Signup: تحميل SDK + التقاط waba_id/phone_number_id + تبادل الكود
+let _waSignup = {};
+function ensureFbSdk(appId, cb) {
+  if (window.FB) { cb(); return; }
+  window.fbAsyncInit = function () { FB.init({ appId: appId, autoLogAppEvents: true, xfbml: false, version: 'v21.0' }); cb(); };
+  if (!document.getElementById('fb-sdk')) {
+    const sc = document.createElement('script'); sc.id = 'fb-sdk'; sc.async = true; sc.crossOrigin = 'anonymous';
+    sc.src = 'https://connect.facebook.net/en_US/sdk.js'; document.body.appendChild(sc);
+  }
+  // مستمع رسائل Embedded Signup (يلتقط معرّفات الحساب)
+  if (!window._waListener) {
+    window._waListener = true;
+    window.addEventListener('message', ev => {
+      if (!/facebook\.com$/.test((ev.origin || '').replace(/^https?:\/\//, '').split('/')[0])) return;
+      try { const d = JSON.parse(ev.data); if (d.type === 'WA_EMBEDDED_SIGNUP' && d.data) { _waSignup.waba_id = d.data.waba_id; _waSignup.phone_number_id = d.data.phone_number_id; } } catch (_) {}
+    });
+  }
+}
+function connectWhatsApp() {
+  const s = (App._meta && App._meta.settings) || {};
+  if (!s.app_id || !s.config_id) { Toast.error('أدخل App ID و Configuration ID أولاً'); return; }
+  ensureFbSdk(s.app_id, function () {
+    FB.login(async function (resp) {
+      const code = resp && resp.authResponse && resp.authResponse.code;
+      if (!code) { Toast.error('أُلغي الربط أو لم يُمنح الإذن'); return; }
+      try {
+        const r = await fetch('/api/meta-exchange', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: code, waba_id: _waSignup.waba_id || null, phone_number_id: _waSignup.phone_number_id || null }) });
+        const d = await r.json();
+        if (!d.ok) { Toast.error(d.message || 'فشل الربط'); return; }
+        Toast.success('تم ربط واتساب بنجاح ✓'); App._meta = null; render();
+      } catch (e) { Toast.error('تعذّر الاتصال بخدمة الربط: ' + e.message); }
+    }, { config_id: s.config_id, response_type: 'code', override_default_response_type: true, extras: { setup: {}, sessionInfoVersion: '3' } });
+  });
+}
+
 async function saveMeta() {
   try {
     const d = await rpc('save_meta_settings', {
@@ -337,6 +378,7 @@ function bindPage() {
   document.querySelectorAll('[data-usr-edit]').forEach(b => b.addEventListener('click', () => userModal((App._users || []).find(u => u.id == b.dataset.usrEdit))));
   document.querySelectorAll('[data-usr-del]').forEach(b => b.addEventListener('click', () => deleteUser(b.dataset.usrDel)));
   if (g('mt-save')) g('mt-save').addEventListener('click', saveMeta);
+  if (g('mt-connect')) g('mt-connect').addEventListener('click', connectWhatsApp);
   if (g('st-save')) g('st-save').addEventListener('click', saveSettings);
   if (g('nf-go')) g('nf-go').addEventListener('click', () => { App._notes = null; loadNotes({ p_employee_id: g('nf-emp').value ? parseInt(g('nf-emp').value) : null, p_label: g('nf-label').value || null, p_from: g('nf-from').value || null, p_to: g('nf-to').value || null, p_search: g('nf-search').value.trim() || null }); });
 }
